@@ -18,14 +18,19 @@ class MobilePart(object):
         self.children = []
         self.parent = None
 
-    def printPart(self, lvl = 0):
+    def printPart(self, lvl = 0, osc = None):
         for i in range(lvl):
             print('-'),
         print("Left: " + str(self.m[0]) + " - Right: " + str(self.m[1]))
 
+        if (osc != None):
+            liblo.send(osc, '/mobilize/part', ('i', lvl), ('f', self.handle), ('f', self.m[0]), ('f', self.m[1]))
+            for child in self.children:
+                liblo.send(osc, 'mobilize/child', ('f', child[1]))
+
         for child in self.children:
             newLvl = lvl + 1
-            child[0].printPart(newLvl)
+            child[0].printPart(newLvl, osc)
 
     def addChild(self, part, ratio):
         child = [part, ratio]
@@ -145,7 +150,7 @@ def balance_callback(path, args, types, src, user_data):
 
 #*************#
 def print_callback(path, args, types, src, user_data):
-    user_data[0].printPart()
+    user_data[0].printPart(osc = user_data[2])
     
 #*************#
 if __name__ == "__main__":
@@ -154,11 +159,12 @@ if __name__ == "__main__":
 
     try:
         oscServer = liblo.Server(12500)
+        oscClient = liblo.Address('127.0.0.1', 12502)
     except liblo.AddressError, err:
         print(str(err))
         sys.exit()
 
-    user_data = [mobileRoot, mobilePtr]
+    user_data = [mobileRoot, mobilePtr, oscClient]
     oscServer.add_method("/mobilize/addPart", "ff", addPart_callback, user_data)
     oscServer.add_method("/mobilize/handle", "f", handle_callback, user_data)
     oscServer.add_method("/mobilize/parent", "", parent_callback, user_data)

@@ -8,6 +8,9 @@ from math import *
 VERBOSE = True
 MIN_WEIGHT = 1.0
 
+PART = 0
+MASS = 1
+
 #*************#
 NEXT_ID = 0
 def getId():
@@ -19,6 +22,7 @@ def getId():
 class Mass(object):
     def __init__(self):
         self.id = getId()
+        self.T = MASS
         self.totalWeight = 1.0
         self.parent = None
         self.isBalanced = True
@@ -30,6 +34,7 @@ class Mass(object):
 class MobilePart(object):
     def __init__(self):
         self.id = getId()
+        self.T = PART
         self.isBalanced = False
         self.m = [MIN_WEIGHT, MIN_WEIGHT]
         self.l = 2.0
@@ -47,7 +52,7 @@ class MobilePart(object):
         if (osc != None):
             liblo.send(osc, '/mobilize/part', ('i', lvl), ('i', self.id))
             for child in self.children:
-                liblo.send(osc, 'mobilize/child', ('i', child[0].id), ('f', child[1]))
+                liblo.send(osc, 'mobilize/child', ('i', child[0].id), ('i', child[0].T), ('f', child[1]))
 
         for child in self.children:
             newLvl = lvl + 1

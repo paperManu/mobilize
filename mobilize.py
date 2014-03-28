@@ -2,14 +2,34 @@
 
 import liblo
 import sys
+import random
 from math import *
 
 VERBOSE = True
 MIN_WEIGHT = 1.0
 
 #*************#
+NEXT_ID = 0
+def getId():
+    global NEXT_ID
+    NEXT_ID += 1
+    return NEXT_ID
+
+#*************#
+class Mass(object):
+    def __init__(self):
+        self.id = getId()
+        self.totalWeight = 1.0
+        self.parent = None
+        self.isBalanced = True
+
+    def printPart(self, lvl = 0, osc = None):
+        return
+
+#*************#
 class MobilePart(object):
     def __init__(self):
+        self.id = getId()
         self.isBalanced = False
         self.m = [MIN_WEIGHT, MIN_WEIGHT]
         self.l = 2.0
@@ -19,14 +39,15 @@ class MobilePart(object):
         self.parent = None
 
     def printPart(self, lvl = 0, osc = None):
-        for i in range(lvl):
-            print('-'),
-        print("Left: " + str(self.m[0]) + " - Right: " + str(self.m[1]))
+        for child in self.children:
+            for i in range(lvl):
+                print('-'),
+            print("Child id: " + str(child[0].id) + " -> " + str(child[1]))
 
         if (osc != None):
-            liblo.send(osc, '/mobilize/part', ('i', lvl), ('f', self.handle), ('f', self.m[0]), ('f', self.m[1]))
+            liblo.send(osc, '/mobilize/part', ('i', lvl), ('i', self.id))
             for child in self.children:
-                liblo.send(osc, 'mobilize/child', ('f', child[1]))
+                liblo.send(osc, 'mobilize/child', ('i', child[0].id), ('f', child[1]))
 
         for child in self.children:
             newLvl = lvl + 1
@@ -70,49 +91,51 @@ class MobilePart(object):
 
         self.totalWeight = 0.0
 
-        childrenTorque = 0.0
+        orderedChildren = []
         for child in self.children:
-            position = child[1] - self.handle
-            childrenTorque += child[0].totalWeight * position
-            self.totalWeight += child[0].totalWeight
-
-        if childrenTorque > 0:
-            print("1 - " + str(childrenTorque))
-            rightTorque = childrenTorque + self.m[1] * (1.0 - self.handle)
-            self.m[0] = abs(rightTorque / self.handle)
-        elif childrenTorque < 0:
-            print("2 - " + str(childrenTorque))
-            leftTorque = childrenTorque + self.m[0] * self.handle
-            self.m[1] = abs(leftTorque / (1.0 - self.handle))
-        else:
-            print("3 - " + str(childrenTorque))
-            if self.handle >= 0.5:
-                self.m[0] = MIN_WEIGHT
-                torque = self.m[0] * self.handle
-                self.m[1] = abs(torque / (1.0 - self.handle))
+            if len(orderedChildren) == 0:
+                orderedChildren.append(child)
             else:
-                self.m[1] = MIN_WEIGHT
-                torque = self.m[0] * (1.0 - self.handle)
-                self.m[1] = abs(torque / self.handle)
+                for i in range(len(orderedChildren)):
+                    if child[0].totalWeight < orderedChildren[i][0].totalWeight:
+                        orderedChildren.insert(i, child)
+                    else:
+                        orderedChildren.insert(i + 1, child)
 
-        self.totalWeight += self.m[0]
-        self.totalWeight += self.m[1]
+        nbr = len(orderedChildren)
+        self.m = 0
+        torque = 0.0
+        for i in range(nbr):
+            if i == nbr - 1 and i % 2 == 0:
+                orderedChildren[i][1] = self.handle
+            elif i % 2 == 0:
+                pos = random.uniform(0.0, self.handle)
+                orderedChildren[i][1] = pos            
+                torque = (self.handle - pos) * orderedChildren[i][0].totalWeight
+            else:
+                w = orderedChildren[i][0].totalWeight
+                pos = torque / w + self.handle
+                orderedChildren[i][1] = pos
+
+            self.totalWeight += orderedChildren[i][0].totalWeight
 
         self.isBalanced = True
 
         if VERBOSE:
-            print(str(self) + " - Left = " + str(self.m[0]) + " -- Right = " + str(self.m[1]) + " -- Total = " + str(self.totalWeight))
+            print(str(self) + ":")
+            for child in self.children:
+                print(str(child[0].id) + " -> " + str(child[1]))
 
 #*************#
 def addPart_callback(path, args, types, src, user_data):
     mobileRoot = user_data[0]
     mobilePtr = user_data[1]
 
-    position = args[0]
-    length = args[1]
+    position = 0.5
+    length = args[0]
 
     if VERBOSE:
-        print("New part at position " + str(position) + " of length " + str(length) + " - Parent: " + str(mobilePtr))
+        print("New part of length " + str(length) + " - Parent: " + str(mobilePtr))
 
     newPart = MobilePart()
     newPart.setLength(length)
@@ -129,6 +152,14 @@ def handle_callback(path, args, types, src, user_data):
     user_data[1].setHandle(handle)
     if VERBOSE:
         print("Set the handle position to " + str(handle) + " - " + str(user_data[1]))
+
+#*************#
+def mass_callback(path, args, types, src, user_data):
+    mass = args[0]
+
+    newMass = Mass();
+    newMass.totalWeight = mass
+    user_data[1].addChild(newMass, 0.5)
 
 #*************#
 def parent_callback(path, args, types, src, user_data):
@@ -165,8 +196,9 @@ if __name__ == "__main__":
         sys.exit()
 
     user_data = [mobileRoot, mobilePtr, oscClient]
-    oscServer.add_method("/mobilize/addPart", "ff", addPart_callback, user_data)
+    oscServer.add_method("/mobilize/addPart", "f", addPart_callback, user_data)
     oscServer.add_method("/mobilize/handle", "f", handle_callback, user_data)
+    oscServer.add_method("/mobilize/mass", "f", mass_callback, user_data)
     oscServer.add_method("/mobilize/parent", "", parent_callback, user_data)
     oscServer.add_method("/mobilize/balance", "", balance_callback, user_data)
     oscServer.add_method("/mobilize/print", "", print_callback, user_data)
